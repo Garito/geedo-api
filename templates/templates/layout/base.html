@@ -1,0 +1,32 @@
+{% block doc %}
+<!DOCTYPE{% block doctype %} HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"{% endblock %}>
+<html{% block html_attribs %} lang="en"{% endblock html_attribs %}>
+<head>
+  {%- block head %}
+  {%- block metas %}
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  {%- endblock %}
+
+  <title>{% block title %}{% endblock %}</title>
+
+  {%- block styles %}{% endblock -%}
+  {%- block scripts %}{% endblock -%} 
+  {% endblock %}
+</head>
+<body{% block body_attribs %} style="margin:0; padding:0; background-color:#F2F2F2;"{% endblock body_attribs %}>
+  {%- block body %}
+  <center>
+    <table{% block main %} width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#F2F2F2"{% endblock %}>
+      <tr>
+        <td align="center" valign="top">
+          {% block content %}{% endblock %}
+        </td>
+      </tr>
+    </table>
+  </center>
+  {%- endblock -%} 
+</body>
+</html>
+{%- endblock -%}

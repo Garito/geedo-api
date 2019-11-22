@@ -1,0 +1,30 @@
+{%- extends "layout/base.html" -%}
+{%- import "layout/snippets.html" as snippets -%}
+
+{%- block title %}Your {{ app_name }}'s invitation{% endblock -%}
+
+{%- block content -%}
+  {% call snippets.grid() %}
+    {% call snippets.row() %}
+      {% call snippets.column(valign = "center") %}
+        <img src="cid:0" style="height: 1.50rem;" alt="{{ app_name}}'s logo'" />
+      {% endcall %}
+      {% call snippets.column(align = "right", valign = "center") %}
+        {{ app_description }}
+      {% endcall %}
+    {% endcall %}
+
+    {% call snippets.row() %}
+      {{ snippets.column() }}
+      {% call snippets.column() %}
+        <h1>You've asked for a {{ app_name }}'s invitation</h1>
+        <p>Click the button to register your account</p>
+        {% call snippets.button("%s/#/register?code=%s&email=%s" | format(app_url, invitation._id, invitation.email | urlencode)) %}
+          Become a {{ app_name }}'s user!
+        {% endcall %}
+        <p>If you haven't, please, accept our appologies and ignore this message</p>
+      {% endcall %}
+      {{ snippets.column() }}
+    {% endcall %}
+  {% endcall %}
+{%- endblock -%}

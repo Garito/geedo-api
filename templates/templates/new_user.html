@@ -1,0 +1,35 @@
+{%- extends "layout/base.html" -%}
+{%- import "layout/snippets.html" as snippets -%}
+
+{%- block title %}{{ user.name }} has registered an account{% endblock -%}
+
+{%- block content -%}
+  {% call snippets.grid() %}
+    {% call snippets.row() %}
+      {% call snippets.column(valign = "center") %}
+        <img src="cid:0" style="height: 1.50rem;" alt="{{ app_name}}'s logo'" />
+      {% endcall %}
+      {% call snippets.column(align = "right", valign = "center") %}
+        {{ app_description }}
+      {% endcall %}
+    {% endcall %}
+
+    {% call snippets.row() %}
+      {{ snippets.column() }}
+      {% call snippets.column() %}
+        <h1>{{ user.name }} has registered an account</h1>
+        <p>Click the button to go to {{ user.name }}'s page</p>
+        {% call snippets.button("%s/#/%s/" | format(app_url, user.slug)) %}
+          Go to {{ user.name }}'s page
+        {% endcall %}
+        <p>
+          <a href="http://www.google.com/search?q={{ user.name | urlencode }}">Click here to search {{ user.name }} @ Google</a>
+        </p>
+        <p>
+          <a href="https://duckduckgo.com/?q={{ user.name | urlencode }}">Click here to search {{ user.name }} @ Duckduckgo</a>
+        </p>
+      {% endcall %}
+      {{ snippets.column() }}
+    {% endcall %}
+  {% endcall %}
+{%- endblock -%}

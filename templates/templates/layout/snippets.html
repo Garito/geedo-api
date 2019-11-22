@@ -1,0 +1,45 @@
+{% macro grid(outer_width = 640, inner_width = 600, color = "FFFFFF", padding = 10) %}
+<table width="{{ outer_width }}" cellspacing="0" cellpadding="0" border="0" align="center" style="max-width:{{ outer_width }}px; width:100%;" bgcolor="#{{ color }}">
+  <tr>
+    <td align="center" valign="top" style="padding:{{ padding }}px;">
+      <table width="{{ inner_width }}" cellspacing="0" cellpadding="0" border="0" align="center" style="max-width:{{ inner_width }}px; width:100%;">
+        {{ caller() }}
+      </table>
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+{% macro row() %}
+<tr>
+  {{ caller() }}
+</tr>
+{% endmacro %}
+
+{% macro row_air(height = 10) %}
+<tr><td height="{{ height }}" style="font-size:{{ height }}px; line-height:{{ height }}px;">&nbsp;</td></tr>
+{% endmacro %}
+
+{% macro column(align = "center", valign = "top") %}
+<td align="{{ align }}" valign="{{ valign }}">
+  {% if caller is defined %}
+  {{ caller() }}
+  {% endif %}
+</td>
+{% endmacro %}
+
+{% macro button(url, width = 200, height = 44, color = "ffffff", bgcolor = "2b3a63", border = 0, radius = 4, font = "Arial, sans-serif", font_size = 14, font_weight = "bold") %}
+<table width="{{ width }}" height="{{ height }}" cellpadding="0" cellspacing="0" border="{{ border }}" bgcolor="#{{ bgcolor }}" style="border-radius:{{ radius }}px;">
+  <tr>
+    <td align="center" valign="middle" height="{{ height }}" style="font-family: {{ font }}; font-size: {{ font_size }}px; font-weight: {{ font_weight }};">
+      <a href="{{ url }}" target="_blank" style="font-family: {{ font }}; color: #{{ color }}; display: inline-block; text-decoration: none; line-height: {{ height }}px; width: {{ width }}px; font-weight: {{ font_weight }};">
+        {{ caller() }}
+      </a>
+    </td>
+  </tr>
+</table>
+{% endmacro %}
+
+{% macro img(src, width, height, alt = "") %}
+<img src="{{ src }}" width="{{ width }}" height="{{ height }}" style="margin: 0; padding: 0; border: none; display: block;" border="0" alt="{{ alt }}" /> 
+{% endmacro %}
