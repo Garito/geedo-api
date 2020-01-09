@@ -41,3 +41,7 @@ class SearchRequest(JsonSchemaMixin):
   search: str = None
   start_date: datetime = None
   end_date: datetime = None
+
+@dataclass
+class GetFileRequest(JsonSchemaMixin):
+  filename: str

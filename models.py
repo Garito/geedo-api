@@ -1,5 +1,6 @@
 from typing import Any, Union, Optional, Dict, Tuple
 from dataclasses import dataclass
+from datetime import datetime
 
 from sanic.request import Request
 
@@ -10,15 +11,15 @@ from yrest.mongo import Mongo
 from yrest.ysanic import yJSONEncoder
 from yrest.auth import Auth, IsAuth
 
-from features import HasUsers, DefinesSecurity, HasDescription, HasName, CanBeRemoved, CanBeRemovedWithFiles, UsedBySystemOnly, SystemNeedsIt, HasRoles, HasContext, HasEmail, CanBeAuthenticated, HasProjects, HasRecords, HasCode, HasPhases, ShouldBeRegistrable, HasDeadline, HasAddress, HasAreas, HasThemes, HasTags, HasStakeholders, HasFiles, IsSearchable, HasMessages, HasMessage, IsTemporalyMarked, FromUser, ShouldBeFinished, HasBacklog, HasPath, HasAspect, ShouldEmitNewsAggregations, AggregatesFiles, AggregatesMessages
+from features import HasInvitations, HasUsers, DefinesSecurity, HasDescription, HasName, CanBeRemoved, CanBeRemovedWithFiles, UsedBySystemOnly, SystemNeedsIt, HasRoles, HasContext, HasEmail, CanBeAuthenticated, HasProjects, HasRecords, HasCode, HasPhases, ShouldBeRegistrable, HasDeadline, HasAddress, HasTags, HasStakeholders, HasFiles, IsSearchable, HasMessages, HasMessage, IsTemporalyMarked, FromUser, ShouldBeFinished, HasBacklog, HasPath, HasAspect, ShouldEmitNewsAggregations, AggregatesFiles, AggregatesMessages, CanBeUpdated, IsCancelable, UpdateRequest, HasRequester, HasDepartment, HasNIF, HasPhone, HasRequesterType, HasRequesterSubtype, ShouldBeResolved
 from parameters import UpdatePermissionRequest
-from yrest.utils import  OkResult, can_crash, ErrorMessage
+from yrest.utils import  OkResult, OkListResult, can_crash, ErrorMessage
 
 class SystemNeedsItException(Exception):
   pass
 
 @dataclass
-class Group(JsonSchemaMixin, Mongo, Tree, IsAuth, AggregatesMessages, AggregatesFiles, ShouldEmitNewsAggregations, HasBacklog, IsSearchable, HasUsers, DefinesSecurity, HasRecords, HasProjects, HasDescription, HasName):
+class Group(JsonSchemaMixin, Mongo, Tree, IsAuth, AggregatesMessages, AggregatesFiles, ShouldEmitNewsAggregations, HasBacklog, IsSearchable, HasInvitations, HasUsers, DefinesSecurity, HasRecords, HasProjects, HasDescription, HasName):
   async def index(self, request: Request) -> OkResult:
     """Returns the group's data"""
     ancests = await self.ancestors(request.app._models)
@@ -44,15 +45,19 @@ class Group(JsonSchemaMixin, Mongo, Tree, IsAuth, AggregatesMessages, Aggregates
     tags = await self._table.distinct("tags")
     return tags
 
-  async def get_themes(self, request: Request) -> OkResult:
-    """Returns the list of themes used in the system"""
-    themes = await self._table.distinct("themes")
-    return themes
+  async def get_departments(self, request: Request) -> OkListResult:
+    """Returns the list of departments"""
+    return ["DS MOBILITAT", "PLANIFICACIÓ", "SENYALITZACIÓ", "REGULACIÓ", "COORDINACIÓ"]
 
-  async def get_areas(self, request: Request) -> OkResult:
-    """Returns the list of areas used in the system"""
-    areas = await self._table.distinct("areas")
-    return areas
+  # async def get_themes(self, request: Request) -> OkResult:
+  #   """Returns the list of themes used in the system"""
+  #   themes = await self._table.distinct("themes")
+  #   return themes
+
+  # async def get_areas(self, request: Request) -> OkResult:
+  #   """Returns the list of areas used in the system"""
+  #   areas = await self._table.distinct("areas")
+  #   return areas
 
 @dataclass
 class Role(JsonSchemaMixin, Mongo, Tree, CanBeRemoved, UsedBySystemOnly, SystemNeedsIt, HasDescription, HasName):
@@ -87,9 +92,14 @@ class Permission(JsonSchemaMixin, Mongo, Tree, HasRoles, HasContext, HasName):
     return self
 
 @dataclass
+class Invitation(JsonSchemaMixin, Mongo, Tree, CanBeRemoved, HasEmail, HasName):
+  """Preregistration of the user"""
+  __x_schema__ = {"form": ["name", "email"]}
+
+@dataclass
 class User(JsonSchemaMixin, Mongo, Tree, CanBeAuthenticated, HasEmail, HasName):
   """Represents the user"""
-
+  # __x_schema__ = {"form": ["email", "password"]}
   __indexer__ = "email"
   __exclude__ = ["password"]
 
@@ -104,28 +114,60 @@ class User(JsonSchemaMixin, Mongo, Tree, CanBeAuthenticated, HasEmail, HasName):
     return {"object": self.to_plain_dict(), "ancestors": ancestors}
 
 @dataclass
-class Project(JsonSchemaMixin, Mongo, Tree, CanBeRemovedWithFiles, ShouldEmitNewsAggregations, HasMessages, HasBacklog, HasFiles, HasStakeholders, HasPhases, HasTags, HasThemes, HasAreas, HasAddress, HasDeadline, ShouldBeRegistrable, HasCode, HasDescription, HasName):
+class Project(JsonSchemaMixin, Mongo, Tree, ShouldBeResolved, HasRequester, CanBeRemovedWithFiles, IsCancelable, CanBeUpdated, ShouldEmitNewsAggregations, HasMessages, HasBacklog, HasFiles, HasStakeholders, HasPhases, HasTags, HasDepartment, HasAddress, HasDeadline, ShouldBeRegistrable, HasCode, HasDescription, HasName):
   """Project"""
-  __x_schema__ = {"form": ["name", "description", "code", "record", "deadline", "address", "areas", "themes", "tags"]}
+  __x_schema__ = {"form": ["name", "description", "code", "record", "deadline", "address", "tags", "requester", "department", "resolution"]}
   _encoder = yJSONEncoder
 
   async def index(self, request: Request) -> OkResult:
     """Returns the project's data"""
     ancestors = [ancestor.to_plain_dict() for ancestor in await self.ancestors(request.app._models)]
     files = await self.files_amount(request)
-    return {"object": self.to_plain_dict(), "ancestors": ancestors, "files": files}
+    requester = await request.app._models.Requester.get(self._table, path = self.get_url())
+    requester = requester.to_plain_dict() if requester else None
+
+    return {"object": self.to_plain_dict(), "ancestors": ancestors, "requester": requester, "files": files}
+
+  async def update(self, request: Request, consume: UpdateRequest) -> OkResult:
+    """Updates the project"""
+    if consume.record and isinstance(consume.record, str):
+      consume.record = datetime.fromisoformat(consume.record)
+    if consume.deadline and isinstance(consume.deadline, str):
+      consume.deadline = datetime.fromisoformat(consume.deadline)
+
+    fields = consume.to_dict().keys()
+
+    data = {field: getattr(consume, field) for field in fields}
+
+    return await super().update(request.app._models, **data)
 
 @dataclass
-class Record(JsonSchemaMixin, Mongo, Tree, CanBeRemovedWithFiles, ShouldEmitNewsAggregations, HasMessages, HasBacklog, HasFiles, HasStakeholders, HasPhases, HasTags, HasThemes, HasAreas, HasAddress, HasDeadline, ShouldBeRegistrable, HasCode, HasDescription, HasName):
+class Record(JsonSchemaMixin, Mongo, Tree, ShouldBeResolved, HasRequester, CanBeRemovedWithFiles, IsCancelable, CanBeUpdated, ShouldEmitNewsAggregations, HasMessages, HasBacklog, HasFiles, HasStakeholders, HasPhases, HasTags, HasDepartment, HasAddress, HasDeadline, ShouldBeRegistrable, HasCode, HasDescription, HasName):
   """Record"""
-  __x_schema__ = {"form": ["name", "description", "code", "record", "deadline", "address", "areas", "themes", "tags"]}
+  __x_schema__ = {"form": ["name", "description", "code", "record", "deadline", "address", "tags", "requester", "departament", "resolution"]}
   _encoder = yJSONEncoder
 
   async def index(self, request: Request) -> OkResult:
     """Returns the record's data"""
     ancestors = [ancestor.to_plain_dict() for ancestor in await self.ancestors(request.app._models)]
     files = await self.files_amount(request)
-    return {"object": self.to_plain_dict(), "ancestors": ancestors, "files": files}
+    requester = await request.app._models.Requester.get(self._table, path = self.get_url())
+    requester = requester.to_plain_dict() if requester else None
+
+    return {"object": self.to_plain_dict(), "ancestors": ancestors, "requester": requester, "files": files}
+
+  async def update(self, request: Request, consume: UpdateRequest) -> OkResult:
+    """Updates the record"""
+    if consume.record and isinstance(consume.record, str):
+      consume.record = datetime.fromisoformat(consume.record)
+    if consume.deadline and isinstance(consume.deadline, str):
+      consume.deadline = datetime.fromisoformat(consume.deadline)
+
+    fields = consume.to_dict().keys()
+
+    data = {field: getattr(consume, field) for field in fields}
+
+    return await super().update(request.app._models, **data)
 
 @dataclass
 class Phase(JsonSchemaMixin, Mongo, Tree, CanBeRemoved, ShouldBeFinished, HasName):
@@ -158,3 +200,13 @@ class Backlog(JsonSchemaMixin, Mongo, Tree, HasAspect, HasPath, FromUser, IsTemp
       return values.get('date', self.date)
     else:
       return self.date.isoformat()
+
+@dataclass
+class Requester(JsonSchemaMixin, Mongo, Tree, HasRequesterSubtype, HasRequesterType, HasNIF, HasPhone, HasEmail, HasName):
+  """Requester"""
+  pass
+
+@dataclass
+class Department(JsonSchemaMixin, Mongo, Tree, HasName):
+  """Department"""
+  pass

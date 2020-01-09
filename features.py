@@ -1,4 +1,5 @@
-from typing import List
+from pathlib import PurePath
+from typing import Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -6,14 +7,24 @@ from enum import Enum
 from sanic.request import Request
 from sanic.exceptions import Unauthorized, NotFound
 
-from dataclasses_jsonschema import JsonSchemaMeta, ValidationError
+from dataclasses_jsonschema import JsonSchemaMeta, JsonSchemaMixin, ValidationError
 
-from yrest.tree import Email, Password
+from yrest.tree import Tree, Email, Password, Phone
+from yrest.mongo import Mongo
 from yrest.ysanic import ySanic
 from yrest.auth import check_password_hash
 from yrest.utils import Ok, OkResult, OkListResult, ErrorMessage, get_parents_urls
 
-from parameters import TransferRoleRequest, DelegationRequest, ChangePasswordRequest, UploadFilesRequest, SearchRequest
+from parameters import TransferRoleRequest, DelegationRequest, ChangePasswordRequest, UploadFilesRequest, SearchRequest, GetFileRequest
+
+@dataclass
+class HasInvitations:
+  invitations: List[str] = field(default_factory = list, metadata = {"model": "Invitation"})
+
+  async def get_invitations(self, request: Request) -> OkListResult:
+    """Returns the list of invitations"""
+    result = await self.children([request.app._models.Invitation])
+    return {child.slug: child.to_plain_dict() for child in result["invitations"]}
 
 @dataclass
 class HasUsers:
@@ -101,6 +112,14 @@ class HasName:
   name: str = field(metadata = JsonSchemaMeta(extensions = {"label": "Name"}))
 
 @dataclass
+class HasPhone:
+  phone: Phone
+
+@dataclass
+class HasNIF:
+  nif: str = field(metadata = JsonSchemaMeta(extensions = {"label": "NIF"}))
+
+@dataclass
 class SystemNeedsIt:
   system: bool = False
 
@@ -143,7 +162,7 @@ class HasRoles:
 
 @dataclass
 class HasEmail:
-  email: Email
+  email: Email = field(metadata = JsonSchemaMeta(extensions = {"label": "Email"}))
 
 @dataclass
 class CanBeAuthenticated:
@@ -176,15 +195,20 @@ class CanBeAuthenticated:
 class HasProjects:
   projects: List[str] = field(default_factory = list, metadata = {"model": "Project"})
 
-  async def get_projects(self, request: Request) -> OkResult:
+  async def get_projects(self, request: Request, actor) -> OkResult:
     """Returns the list of projects"""
     children = await self.children([request.app._models.Project], sort = {"Project": {"$sort": {"record": 1}}})
     result = {}
     for child in children["projects"]:
-      proj = child.to_plain_dict()
-      proj["phaseStats"] = await child.phases_stats(request)
-      proj["fileStats"] = await child.files_amount(request)
-      result[child.slug] = proj
+      obj = child.to_plain_dict()
+      child._table = self._table
+      url = child.get_url()
+      obj["stats"] = {}
+      obj["stats"]["files"] = len(await request.app._gridfs.find({"filename": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["messages"] = len(await request.app._table.find({"type": "Message", "path": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["activity"] = len(await request.app._table.find({"type": "Backlog", "runned_path": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["phases"] = await child.phases_stats(request)
+      result[child.slug] = obj
 
     return result
 
@@ -194,13 +218,19 @@ class HasRecords:
 
   async def get_records(self, request: Request) -> OkResult:
     """Returns the list of records"""
+    from sanic.log import logger
     children = await self.children([request.app._models.Record], sort = {"Record": {"$sort": {"record": 1}}})
     result = {}
     for child in children["records"]:
-      proj = child.to_plain_dict()
-      proj["phaseStats"] = await child.phases_stats(request)
-      proj["fileStats"] = await child.files_amount(request)
-      result[child.slug] = proj
+      obj = child.to_plain_dict()
+      child._table = self._table
+      url = child.get_url()
+      obj["stats"] = {}
+      obj["stats"]["files"] = len(await request.app._gridfs.find({"filename": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["messages"] = len(await request.app._table.find({"type": "Message", "path": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["activity"] = len(await request.app._table.find({"type": "Backlog", "runned_path": {"$regex": f"^{url}"}}).to_list(None))
+      obj["stats"]["phases"] = await child.phases_stats(request)
+      result[child.slug] = obj
 
     return result
 
@@ -239,17 +269,21 @@ class HasDeadline:
 class HasAddress:
   address: str = field(metadata = JsonSchemaMeta(extensions = {"label": "Address", "format": "GeoAddress"}))
 
+  async def get_near(self, request: Request) -> OkResult:
+    """Returns projects and records near by the address"""
+    pass
+
 @dataclass
 class HasTags:
   tags: List[str] = field(default_factory = list, metadata = JsonSchemaMeta(extensions = {"label": "Tags", "options": {"opId": "Root/get_tags", "taggable": True}}))
 
-@dataclass
-class HasThemes:
-  themes: List[str] = field(default_factory = list, metadata = JsonSchemaMeta(extensions = {"label": "Themes", "options": {"opId": "Root/get_themes", "taggable": True}}))
+# @dataclass
+# class HasThemes:
+#   themes: List[str] = field(default_factory = list, metadata = JsonSchemaMeta(extensions = {"label": "Themes", "options": {"opId": "Root/get_themes", "taggable": True}}))
 
-@dataclass
-class HasAreas:
-  areas: List[str] = field(default_factory = list, metadata = JsonSchemaMeta(extensions = {"label": "Areas", "options": {"opId": "Root/get_areas", "taggable": True}}))
+# @dataclass
+# class HasAreas:
+#   areas: List[str] = field(default_factory = list, metadata = JsonSchemaMeta(extensions = {"label": "Areas", "options": {"opId": "Root/get_areas", "taggable": True}}))
 
 @dataclass
 class HasStakeholders:
@@ -257,8 +291,16 @@ class HasStakeholders:
     """Returns the project's stakeholders"""
     my_url = self.get_url()
     stakeholders = await request.app._models.User.gets(self._table, roles = {"$regex": f"@{my_url}$"})
-    stakeholders = {next(filter(lambda r: r.endswith(my_url), stakeholder.roles)).split('@')[0]: stakeholder.to_plain_dict() for stakeholder in stakeholders}
-    return stakeholders
+    result = {}
+    for stakeholder in stakeholders:
+      for rolepath in stakeholder.roles:
+        if rolepath.endswith(f'@{my_url}'):
+          role = rolepath.split('@')[0]
+          if role not in result.keys():
+            result[role] = []
+          result[role].append(stakeholder)
+
+    return result
 
   async def transfer_role(self, request: Request, actor: "User", consume: TransferRoleRequest) -> OkListResult:
     """Transfer a role from the actor to the provided user"""
@@ -364,7 +406,7 @@ class IsSearchable:
     if consume.search:
       search_query = {
         "multi_match": {
-          "fields": ["name", "description", "code", "address", "areas", "themes", "tags" ],
+          "fields": ["name", "description", "code", "address", "areas", "themes", "tags", "filename" ],
           "query": consume.search,
           "fuzziness": "AUTO"
         }
@@ -405,9 +447,20 @@ class IsSearchable:
         "query": date_query
       }
 
-    result = await request.app._es.search(index = "gd.gd", body = query)
+    result = await request.app._es.search(index = "gd.gd,gd.fs.files", body = query)
     return result["hits"]
 
+  async def search_file(self, request: Request, consume: GetFileRequest) -> OkResult:
+    """Returns the file by its name"""
+    from sanic.log import logger
+    async for file in request.app._gridfs.find({"filename": consume.filename}):
+      parentUrl = PurePath(file.metadata["parent"])
+      parentDoc = await request.app._table.find_one({"path": str(parentUrl.parent), "slug": parentUrl.name})
+      parent = getattr(request.app._models, parentDoc["type"])(**parentDoc)
+      stream = await file.read()
+      return {"filename": file.filename, "content_type": file.metadata["contentType"], "stream": stream, "parent": parent.to_plain_dict()}
+    else:
+      return None
 @dataclass
 class FromUser:
   user: Email
@@ -489,7 +542,8 @@ class ShouldEmitNewsAggregations:
 
     if last:
       url = self.get_url()
-      files = await request.app._gridfs.find({"filename": {"$regex": f"^{url}"}, "uploadDate": {"$gte": last.date}}).to_list(None)
+      # files = await request.app._gridfs.find({"filename": {"$regex": f"^{url}"}, "uploadDate": {"$gte": last.date}}).to_list(None)
+      files = await request.app._gridfs.find({"filename": {"$regex": f"^{url}"}}).to_list(None)
       messages = await request.app._table.find({"type": "Message", "path": {"$regex": f"^{url}"}, "date": {"$gte": last.date}}).to_list(None)
       activity = await request.app._table.find({"type": "Backlog", "runned_path": {"$regex": f"^{url}"}, "date": {"$gte": last.date}}).to_list(None)
     else:
@@ -498,3 +552,45 @@ class ShouldEmitNewsAggregations:
       activity = []
 
     return {"files": len(files), "messages": len(messages), "activity": len(activity)}
+
+@dataclass
+class UpdateRequest(JsonSchemaMixin, HasTags, HasAddress, HasDeadline, ShouldBeRegistrable, HasCode, HasDescription):
+  pass
+
+@dataclass
+class CanBeUpdated:
+  pass
+
+@dataclass
+class IsCancelable:
+  canceled: datetime = None
+
+  async def cancel(self, request: Request) -> OkResult:
+    """Cancels the paper"""
+    data = {"canceled": datetime.utcnow()}
+    await super(Mongo, self).update(request.app._models, **data)
+    return data
+
+  async def reopen(self, request: Request):
+    """Reopens the paper"""
+    await super(Mongo, self).update(request.app._models, canceled = None)
+
+@dataclass
+class HasRequester:
+  requester: str = field(default = None, metadata = {"model": "Requester"})
+
+@dataclass
+class HasRequesterType:
+  reqType: str = None
+
+@dataclass
+class HasRequesterSubtype:
+  subtype: str = None
+
+@dataclass
+class HasDepartment:
+  department: str = field(metadata = JsonSchemaMeta(extensions = {"label": "Department", "options": {"opId": "Root/get_departments", "model": "Department"}}))
+
+@dataclass
+class ShouldBeResolved:
+  resolution: str = field(default = '', metadata = JsonSchemaMeta(maxLength = 5000, extensions = {"label": "Resolution"}))

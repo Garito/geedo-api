@@ -71,6 +71,6 @@ class Development(Config):
 class Testing(Development):
   TESTING: bool = True
 
-  MONGO_TABLE = "Tests"
+  MONGO_DB = "Tests"
 
   OA_SERVER_DESCRIPTION: str = "Test server"
