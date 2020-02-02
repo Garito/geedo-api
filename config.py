@@ -44,7 +44,7 @@ class Config:
     # "Invited": {"description": "The non registered user that has asked for an invitation", "system_only": True},
     # "Forgetful": {"description": "The user that has forgot the password", "system_only": True},
     "Owner": {"description": "The owner of the resource"},
-    "Finisher": {"description": "The one that finishes a phase"}
+    "Participant": {"description": "The one that finishes a phase"}
   }
 
   # OPEN_ENDPOINTS = ['Group/call', 'Group/auth', 'Group/get_permissions', 'Group/get_roles', 'Group/get_users']

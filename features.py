@@ -506,10 +506,10 @@ class ShouldBeFinished:
     await self.update(request.app._models, finished = datetime.utcnow())
 
     roles = actor.roles
-    roles.append(f"finisher@{self.get_url()}")
+    roles.append(f"participant@{self.get_url()}")
     await actor.update(request.app._models, roles = roles)
 
-    return {"finished": self.finished.isoformat(), "finisher": actor.slug}
+    return {"finished": self.finished.isoformat(), "participant": actor.slug}
 
 @dataclass
 class HasBacklog:
